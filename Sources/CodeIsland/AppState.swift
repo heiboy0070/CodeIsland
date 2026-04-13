@@ -876,32 +876,28 @@ final class AppState {
             ]
             responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
         } else {
-            // 如果有附加内容，使用带 content 的响应格式
-            if let content = content, !content.isEmpty {
-                let obj: [String: Any] = [
-                    "hookSpecificOutput": [
-                        "hookEventName": "PermissionRequest",
-                        "decision": [
-                            "behavior": "allow",
-                            "userInput": content
-                        ] as [String: Any]
-                    ] as [String: Any]
-                ]
-                responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
-            } else {
-                let response = ##"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"##
-                responseData = Data(response.utf8)
-            }
+            // 标准权限批准响应（不包含 userInput）
+            let response = ##"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"##
+            responseData = Data(response.utf8)
         }
         pending.continuation.resume(returning: responseData)
         let sessionId = pending.event.sessionId ?? "default"
         sessions[sessionId]?.status = .running
 
+        // 如果有附加内容，通过 TerminalWriter 发送到终端
+        if let content = content, !content.isEmpty,
+           let session = sessions[sessionId] {
+            // 延迟发送，确保权限已处理
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                TerminalWriter.sendText(session: session, sessionId: sessionId, text: content, pressEnter: true)
+            }
+        }
+
         showNextPending()
         refreshDerivedState()
     }
 
-    func denyPermission() {
+    func denyPermission(content: String? = nil) {
         guard !permissionQueue.isEmpty else { return }
         let pending = permissionQueue.removeFirst()
         let response = #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}"#
@@ -913,6 +909,15 @@ final class AppState {
 
         if activeSessionId == sessionId {
             activeSessionId = mostActiveSessionId()
+        }
+
+        // 如果有附加内容，通过 TerminalWriter 发送到终端
+        if let content = content, !content.isEmpty,
+           let session = sessions[sessionId] {
+            // 延迟发送，确保权限已处理
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                TerminalWriter.sendText(session: session, sessionId: sessionId, text: content, pressEnter: true)
+            }
         }
 
         showNextPending()

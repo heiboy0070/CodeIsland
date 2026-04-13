@@ -116,13 +116,7 @@ struct NotchPanelView: View {
                                 onAllowWithContent: { content in appState.approvePermission(always: false, content: content) },
                                 onAlwaysAllowWithContent: { content in appState.approvePermission(always: true, content: content) },
                                 onDenyWithContent: { content in
-                                    if let content = content {
-                                        // 有附加内容时，需要特殊处理拒绝
-                                        // 暂时直接清空输入，后续可以扩展
-                                        appState.denyPermission()
-                                    } else {
-                                        appState.denyPermission()
-                                    }
+                                    appState.denyPermission(content: content)
                                 }
                             )
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
