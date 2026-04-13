@@ -1,4 +1,5 @@
 import Foundation
+import os.log
 
 public enum ChatMessageTextFormatter {
     private static var markdownCache: [String: AttributedString] = [:]
@@ -16,12 +17,16 @@ public enum ChatMessageTextFormatter {
         if let cached = markdownCache[text] { return cached }
 
         let result: AttributedString
-        if let attr = try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
+        // 使用 full 模式支持块级元素（标题、列表、代码块等）
+        do {
+            let attr = try AttributedString(
+                markdown: text,
+                options: .init(interpretedSyntax: .full)
+            )
             result = attr
-        } else {
+        } catch {
+            // 解析失败时记录错误并使用纯文本
+            os_log("Markdown parse failed: %@", error.localizedDescription)
             result = AttributedString(text)
         }
 

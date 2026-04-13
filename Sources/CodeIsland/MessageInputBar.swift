@@ -103,11 +103,12 @@ struct MessageInputBar: View {
                                         .font(.system(size: fontSize - 1, weight: .bold, design: .monospaced))
                                         .foregroundStyle(last.isUser ? Color(red: 0.3, green: 0.85, blue: 0.4) : Color(red: 0.85, green: 0.47, blue: 0.34))
                                     AppleStyleScrollView(minHeight: 44, maxHeight: 120) {
-                                        Text(markdownFormatted(last.text))
-                                            .font(.system(size: fontSize - 1, design: .monospaced))
-                                            .foregroundStyle(.white.opacity(0.75))
-                                            .textSelection(.enabled)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            renderMarkdown(last.text)
+                                        }
+                                        .font(.system(size: fontSize - 1, design: .monospaced))
+                                        .foregroundStyle(.white.opacity(0.75))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                     }
                                 }
                             }
@@ -287,11 +288,9 @@ struct MessageInputBar: View {
         return words.prefix(2).joined()
     }
 
-    /// Markdown 格式化（用于最后一条消息的完整显示）
+    /// Markdown 格式化（用于前面消息的简洁显示，已被 renderMarkdown 替代）
     private func markdownFormatted(_ text: String) -> AttributedString {
         let processed = parseSystemTags(text)
-
-        // 使用项目的 ChatMessageTextFormatter 处理 Markdown
         return ChatMessageTextFormatter.inlineMarkdown(processed)
     }
 
@@ -474,6 +473,185 @@ struct MessageInputBar: View {
 
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    /// 自定义 Markdown 渲染 - 支持块级元素
+    private func renderMarkdown(_ text: String) -> some View {
+        let processed = parseSystemTags(text)
+        let blocks = parseMarkdownBlocks(processed)
+
+        return VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                renderMarkdownBlock(block)
+            }
+        }
+    }
+
+    /// 解析 Markdown 块
+    private func parseMarkdownBlocks(_ text: String) -> [MarkdownBlock] {
+        var blocks: [MarkdownBlock] = []
+        let lines = text.components(separatedBy: "\n")
+        var i = 0
+
+        while i < lines.count {
+            let line = lines[i]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            // 代码块
+            if trimmed.hasPrefix("```") {
+                var codeLines: [String] = []
+                i += 1
+                while i < lines.count && !lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                    codeLines.append(lines[i])
+                    i += 1
+                }
+                i += 1  // 跳过结束标记
+                blocks.append(.code(codeLines.joined(separator: "\n")))
+                continue
+            }
+
+            // 标题
+            if trimmed.hasPrefix("###") {
+                let content = trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces)
+                blocks.append(.header3(String(content)))
+            } else if trimmed.hasPrefix("##") {
+                let content = trimmed.dropFirst(2).trimmingCharacters(in: .whitespaces)
+                blocks.append(.header2(String(content)))
+            } else if trimmed.hasPrefix("#") {
+                let content = trimmed.dropFirst(1).trimmingCharacters(in: .whitespaces)
+                blocks.append(.header1(String(content)))
+            }
+            // 列表项
+            else if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
+                blocks.append(.listItem(String(trimmed.dropFirst(2))))
+            }
+            // 编号列表
+            else if trimmed.range(of: "^\\d+\\. ", options: .regularExpression) != nil {
+                blocks.append(.numberedList(trimmed))
+            }
+            // 引用
+            else if trimmed.hasPrefix("> ") {
+                blocks.append(.quote(String(trimmed.dropFirst(2))))
+            }
+            // 分隔线
+            else if trimmed == "---" || trimmed == "___" || trimmed == "***" {
+                blocks.append(.divider)
+            }
+            // 普通段落
+            else if !trimmed.isEmpty {
+                // 合并连续的非空行
+                var paragraph = trimmed
+                i += 1
+                while i < lines.count {
+                    let nextTrimmed = lines[i].trimmingCharacters(in: .whitespaces)
+                    if !nextTrimmed.isEmpty && !nextTrimmed.hasPrefix("-") && !nextTrimmed.hasPrefix("*") &&
+                       !nextTrimmed.hasPrefix(">") && !nextTrimmed.hasPrefix("#") &&
+                       !nextTrimmed.hasPrefix("```") && !nextTrimmed.hasPrefix("---") &&
+                       nextTrimmed.range(of: "^\\d+\\. ", options: .regularExpression) == nil {
+                        paragraph += " " + nextTrimmed
+                        i += 1
+                    } else {
+                        break
+                    }
+                }
+                i -= 1  // 回退一行，因为外层会加 1
+                blocks.append(.paragraph(paragraph))
+            }
+            // 空行
+            else {
+                blocks.append(.spacer)
+            }
+
+            i += 1
+        }
+
+        return blocks
+    }
+
+    /// 渲染单个 Markdown 块
+    @ViewBuilder
+    private func renderMarkdownBlock(_ block: MarkdownBlock) -> some View {
+        switch block {
+        case .code(let text):
+            Text(text)
+                .font(.system(.body, design: .monospaced))
+                .padding(8)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(6)
+        case .header1(let text):
+            Text(renderInlineMarkdown(text))
+                .font(.system(size: fontSize + 1, weight: .bold, design: .monospaced))
+        case .header2(let text):
+            Text(renderInlineMarkdown(text))
+                .font(.system(size: fontSize, weight: .bold, design: .monospaced))
+        case .header3(let text):
+            Text(renderInlineMarkdown(text))
+                .font(.system(size: fontSize - 1, weight: .semibold, design: .monospaced))
+        case .listItem(let text):
+            HStack(alignment: .top, spacing: 6) {
+                Text("•")
+                    .foregroundStyle(.white.opacity(0.6))
+                Text(renderInlineMarkdown(text))
+            }
+        case .numberedList(let text):
+            if let matchRange = text.range(of: "^\\d+\\. ", options: .regularExpression) {
+                let number = String(text[matchRange]).dropLast(2)
+                let content = String(text[matchRange.upperBound...].trimmingCharacters(in: .whitespaces))
+                HStack(alignment: .top, spacing: 6) {
+                    Text("\(number).")
+                        .foregroundStyle(.white.opacity(0.6))
+                    Text(renderInlineMarkdown(content))
+                }
+            } else {
+                Text(renderInlineMarkdown(text))
+            }
+        case .quote(let text):
+            HStack(spacing: 6) {
+                Rectangle()
+                    .fill(Color.white.opacity(0.3))
+                    .frame(width: 3)
+                Text(renderInlineMarkdown(text))
+                    .italic()
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+        case .divider:
+            Rectangle()
+                .fill(Color.white.opacity(0.2))
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+        case .paragraph(let text):
+            Text(renderInlineMarkdown(text))
+        case .spacer:
+            Spacer()
+                .frame(height: 4)
+        }
+    }
+
+    /// 渲染行内 Markdown（粗体、斜体、代码）
+    private func renderInlineMarkdown(_ text: String) -> AttributedString {
+        do {
+            let attr = try AttributedString(
+                markdown: text,
+                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+            )
+            return attr
+        } catch {
+            return AttributedString(text)
+        }
+    }
+}
+
+/// Markdown 块类型
+enum MarkdownBlock: Equatable {
+    case code(String)
+    case header1(String)
+    case header2(String)
+    case header3(String)
+    case listItem(String)
+    case numberedList(String)
+    case quote(String)
+    case divider
+    case paragraph(String)
+    case spacer
 }
 
 // MARK: - Apple Style Scrollbar View Modifier
