@@ -228,12 +228,16 @@ final class L10n: ObservableObject {
         "allow_once": "ALLOW ONCE",
         "always": "ALWAYS",
         "type_answer": "Type your answer...",
+        "send_message_placeholder": "Type message...",
+        "send_to_terminal": "Send",
+        "approval_input_placeholder": "Attach content (optional)...",
         "skip": "SKIP",
         "back": "BACK",
         "confirm": "CONFIRM",
         "submit": "SUBMIT",
         "open_path": "Open",
         "copy_session_id": "Copy session ID",
+        "remote_input_unsupported": "Remote sessions don't support direct input",
 
         // Session grouping
         "status_running": "Running",
@@ -441,12 +445,16 @@ final class L10n: ObservableObject {
         "allow_once": "允许一次",
         "always": "始终允许",
         "type_answer": "输入回答…",
+        "send_message_placeholder": "输入消息…",
+        "send_to_terminal": "发送",
+        "approval_input_placeholder": "附加内容（可选）…",
         "skip": "跳过",
         "back": "返回",
         "confirm": "确认",
         "submit": "提交",
         "open_path": "打开",
         "copy_session_id": "复制会话 ID",
+        "remote_input_unsupported": "远程会话不支持直接输入",
 
         // Session grouping
         "status_running": "运行中",
@@ -654,12 +662,14 @@ final class L10n: ObservableObject {
         "allow_once": "BİR KEZ İZİN VER",
         "always": "HER ZAMAN",
         "type_answer": "Cevabınızı yazın...",
+        "send_message_placeholder": "Mesaj yazın...",
         "skip": "ATLA",
         "back": "GERİ",
         "confirm": "ONAYLA",
         "submit": "GÖNDER",
         "open_path": "Aç",
         "copy_session_id": "Oturum ID Kopyala",
+        "remote_input_unsupported": "Uzaktan oturumlar doğrudan girişi desteklemez",
 
         // Session grouping
         "status_running": "Çalışıyor",
