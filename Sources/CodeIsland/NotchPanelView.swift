@@ -83,6 +83,16 @@ struct NotchPanelView: View {
                         CompactRightWing(appState: appState, expanded: shouldShowExpanded, hasNotch: hasNotch)
                     }
                     .frame(height: notchHeight)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        TapGesture(count: 2)
+                            .onEnded {
+                                // 双击刘海返回会话列表
+                                withAnimation(NotchAnimation.close) {
+                                    appState.surface = .sessionList
+                                }
+                            }
+                    )
                 } else if showIdleIndicator {
                     IdleIndicatorBar(
                         mascotSize: mascotSize,
