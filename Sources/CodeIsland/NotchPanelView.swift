@@ -38,7 +38,7 @@ struct NotchPanelView: View {
         showBar && appState.surface.isExpanded
     }
 
-    /// 处理 ESC 键
+    /// 处理 ESC 键 - 使用全局监听
     private func handleEscapeKey() {
         switch appState.surface {
         case .approvalCard, .questionCard, .messageInput:
@@ -60,6 +60,19 @@ struct NotchPanelView: View {
         case .collapsed:
             // 已经是收起状态，不做任何事
             break
+        }
+    }
+
+    /// 安装全局 ESC 键监听
+    private func installEscapeKeyMonitor() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 {  // ESC key
+                Task { @MainActor in
+                    self.handleEscapeKey()
+                }
+                return nil  // 阻止事件传播
+            }
+            return event
         }
     }
 
@@ -330,17 +343,14 @@ struct NotchPanelView: View {
                 }
             }
 
-            // ESC 键处理
-            .onKeyPress(.escape) {
-                handleEscapeKey()
-                return .handled
-            }
-
             Spacer()
                 .allowsHitTesting(false)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(NotchAnimation.open, value: appState.surface)
+        .onAppear {
+            installEscapeKeyMonitor()
+        }
     }
 }
 
@@ -782,7 +792,7 @@ private struct ApprovalBar: View {
                 Text(">")
                     .font(.system(size: CGFloat(contentFontSize) - 1, weight: .bold, design: .monospaced))
                     .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
-                TextField(L10n.shared["approval_input_placeholder"] ?? "附加内容（可选）...", text: $inputText)
+                TextField(L10n.shared["approval_input_placeholder"], text: $inputText)
                     .textFieldStyle(.plain)
                     .font(.system(size: CGFloat(contentFontSize) - 1, design: .monospaced))
                     .foregroundStyle(.white)
@@ -1801,14 +1811,8 @@ private struct SessionCard: View {
 
     var body: some View {
         Button {
-            // 点击卡片：如果有消息输入功能，打开输入面板；否则跳转终端
-            if !session.isRemote && !session.isIDETerminal {
-                withAnimation(NotchAnimation.open) {
-                    appState.surface = .messageInput(sessionId: sessionId)
-                }
-            } else {
-                TerminalActivator.activate(session: session, sessionId: sessionId)
-            }
+            // 点击卡片：跳转终端
+            TerminalActivator.activate(session: session, sessionId: sessionId)
         } label: {
         HStack(alignment: .center, spacing: 8) {
             // Column 1: Character + subagent icons

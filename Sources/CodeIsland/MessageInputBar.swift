@@ -1,5 +1,6 @@
 import SwiftUI
 import CodeIslandCore
+import AppKit
 
 /// 消息输入卡片 — 在刘海面板中输入文字发送到终端
 struct MessageInputBar: View {
@@ -170,15 +171,17 @@ struct MessageInputBar: View {
                 Text(">")
                     .font(.system(size: fontSize, weight: .bold, design: .monospaced))
                     .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
-                TextField(L10n.shared["send_message_placeholder"] ?? "输入消息...", text: inputText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: fontSize, design: .monospaced))
-                    .foregroundStyle(.white)
-                    .focused($isFocused)
-                    .onSubmit {
+                IMECompatibleTextField(
+                    placeholder: L10n.shared["send_message_placeholder"],
+                    text: inputText,
+                    isFocused: $isFocused,
+                    onSubmit: {
                         guard !inputText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
                         onSend(inputText.wrappedValue)
                     }
+                )
+                .font(.system(size: fontSize, design: .monospaced))
+                .foregroundStyle(.white)
 
                 // 发送按钮
                 Button {
@@ -209,7 +212,7 @@ struct MessageInputBar: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 9))
                         .foregroundStyle(.yellow.opacity(0.7))
-                    Text(L10n.shared["remote_input_unsupported"] ?? "远程会话不支持直接输入")
+                    Text(L10n.shared["remote_input_unsupported"])
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(.white.opacity(0.4))
                 }
@@ -778,6 +781,96 @@ struct AppleStyleScrollView<Content: View>: View {
         .background(Color.clear)
         .scrollContentBackground(.hidden)
         .frame(minHeight: minHeight, maxHeight: maxHeight)
+    }
+}
+
+// MARK: - IME Compatible TextField
+
+/// 兼容中文输入法的 TextField - 使用 NSTextField 包装
+struct IMECompatibleTextField: View {
+    let placeholder: String
+    let text: Binding<String>
+    let isFocused: FocusState<Bool>.Binding
+    let onSubmit: () -> Void
+
+    var body: some View {
+        TextFieldRepresentable(
+            placeholder: placeholder,
+            text: text,
+            isFocused: isFocused,
+            onSubmit: onSubmit
+        )
+    }
+}
+
+private struct TextFieldRepresentable: NSViewRepresentable {
+    let placeholder: String
+    let text: Binding<String>
+    let isFocused: FocusState<Bool>.Binding
+    let onSubmit: () -> Void
+
+    func makeNSView(context: Context) -> NSTextField {
+        let textField = NSTextField()
+        textField.placeholderString = placeholder
+        textField.stringValue = text.wrappedValue
+        textField.delegate = context.coordinator
+        textField.bezelStyle = .roundedBezel
+        textField.drawsBackground = false
+        textField.isBordered = false
+        textField.focusRingType = .none
+        return textField
+    }
+
+    func updateNSView(_ nsView: NSTextField, context: Context) {
+        if nsView.stringValue != text.wrappedValue {
+            nsView.stringValue = text.wrappedValue
+        }
+        // 更新焦点状态
+        let hasFocus = nsView.window?.firstResponder == nsView.currentEditor()
+        if isFocused.wrappedValue != hasFocus {
+            if isFocused.wrappedValue {
+                DispatchQueue.main.async {
+                    nsView.window?.makeFirstResponder(nsView)
+                }
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: text, isFocused: isFocused, onSubmit: onSubmit)
+    }
+
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        let text: Binding<String>
+        let isFocused: FocusState<Bool>.Binding
+        let onSubmit: () -> Void
+
+        init(text: Binding<String>, isFocused: FocusState<Bool>.Binding, onSubmit: @escaping () -> Void) {
+            self.text = text
+            self.isFocused = isFocused
+            self.onSubmit = onSubmit
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            if let textField = obj.object as? NSTextField {
+                text.wrappedValue = textField.stringValue
+            }
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            // 处理 Enter 键
+            if commandSelector == #selector(NSText.insertNewline(_:)) {
+                // 检查是否有未完成的中文输入（marked text）
+                if textView.hasMarkedText() {
+                    // 让 IME 处理 Enter 键（确认输入）
+                    return false
+                }
+                // 没有 marked text，执行发送
+                onSubmit()
+                return true
+            }
+            return false
+        }
     }
 }
 
