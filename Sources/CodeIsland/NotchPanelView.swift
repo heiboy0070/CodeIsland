@@ -38,6 +38,31 @@ struct NotchPanelView: View {
         showBar && appState.surface.isExpanded
     }
 
+    /// 处理 ESC 键
+    private func handleEscapeKey() {
+        switch appState.surface {
+        case .approvalCard, .questionCard, .messageInput:
+            // 从任何卡片返回到会话列表
+            withAnimation(NotchAnimation.close) {
+                appState.surface = .sessionList
+            }
+        case .sessionList:
+            // 从会话列表收起到 collapsed
+            withAnimation(NotchAnimation.close) {
+                appState.surface = .collapsed
+            }
+        case .completionCard:
+            // 完成卡片也收起
+            withAnimation(NotchAnimation.close) {
+                appState.surface = .collapsed
+                appState.cancelCompletionQueue()
+            }
+        case .collapsed:
+            // 已经是收起状态，不做任何事
+            break
+        }
+    }
+
     /// Mascot size — fits within the menu bar height
     private var mascotSize: CGFloat { min(27, notchHeight - 6) }
 
@@ -172,8 +197,11 @@ struct NotchPanelView: View {
                             MessageInputBar(
                                 session: session,
                                 sessionId: sid,
+                                appState: appState,
                                 onSend: { text in
                                     TerminalWriter.sendText(session: session, sessionId: sid, text: text)
+                                    // 发送成功后清空输入
+                                    appState.pendingInputText[sid] = ""
                                 },
                                 onDismiss: {
                                     withAnimation(NotchAnimation.close) {
@@ -300,6 +328,12 @@ struct NotchPanelView: View {
                         }
                     }
                 }
+            }
+
+            // ESC 键处理
+            .onKeyPress(.escape) {
+                handleEscapeKey()
+                return .handled
             }
 
             Spacer()

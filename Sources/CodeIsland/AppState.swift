@@ -18,6 +18,7 @@ final class AppState {
     var activeSessionId: String?
     var permissionQueue: [PermissionRequest] = []
     var questionQueue: [QuestionRequest] = []
+    var pendingInputText: [String: String] = [:]  // 存储每个会话的输入文本
 
     /// Computed: first item in permission queue (backward compat for UI reads)
     var pendingPermission: PermissionRequest? { permissionQueue.first }
