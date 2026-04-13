@@ -5,13 +5,21 @@ import CodeIslandCore
 struct MessageInputBar: View {
     let session: SessionSnapshot
     let sessionId: String
+    let appState: AppState
     let onSend: (String) -> Void
     let onDismiss: () -> Void
 
-    @State private var inputText = ""
     @FocusState private var isFocused: Bool
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
+
+    // 使用持久化的输入文本
+    private var inputText: Binding<String> {
+        Binding(
+            get: { appState.pendingInputText[sessionId] ?? "" },
+            set: { appState.pendingInputText[sessionId] = $0 }
+        )
+    }
 
     private var fontSize: CGFloat { CGFloat(contentFontSize) }
     private var aiLineLimit: Int? { aiMessageLines > 0 ? aiMessageLines : nil }
@@ -162,33 +170,31 @@ struct MessageInputBar: View {
                 Text(">")
                     .font(.system(size: fontSize, weight: .bold, design: .monospaced))
                     .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
-                TextField(L10n.shared["send_message_placeholder"] ?? "输入消息...", text: $inputText)
+                TextField(L10n.shared["send_message_placeholder"] ?? "输入消息...", text: inputText)
                     .textFieldStyle(.plain)
                     .font(.system(size: fontSize, design: .monospaced))
                     .foregroundStyle(.white)
                     .focused($isFocused)
                     .onSubmit {
-                        guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                        onSend(inputText)
-                        inputText = ""
+                        guard !inputText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                        onSend(inputText.wrappedValue)
                     }
 
                 // 发送按钮
                 Button {
-                    guard !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                    onSend(inputText)
-                    inputText = ""
+                    guard !inputText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+                    onSend(inputText.wrappedValue)
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 18))
                         .foregroundStyle(
-                            inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            inputText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                                 ? .white.opacity(0.3)
                                 : Color(red: 0.3, green: 0.85, blue: 0.4)
                         )
                 }
                 .buttonStyle(.plain)
-                .disabled(inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(inputText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -520,6 +526,58 @@ struct MessageInputBar: View {
                 let content = trimmed.dropFirst(1).trimmingCharacters(in: .whitespaces)
                 blocks.append(.header1(String(content)))
             }
+            // 表格（检测 | 包围的行）
+            else if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
+                var tableRows: [[String]] = []
+                var headers: [String] = []
+
+                // 解析表头 - 保留空单元格
+                func parseTableRow(_ line: String) -> [String] {
+                    // 移除首尾的 |
+                    var content = line
+                    content.removeFirst()
+                    content.removeLast()
+                    // 分割并保留空字符串
+                    let cells = content.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+                    return cells
+                }
+
+                headers = parseTableRow(trimmed)
+
+                // 检查下一行是否是分隔线
+                i += 1
+                if i < lines.count {
+                    let nextLine = lines[i].trimmingCharacters(in: .whitespaces)
+                    if nextLine.hasPrefix("|") && nextLine.contains("---") {
+                        // 这是分隔线，跳过
+                        i += 1
+                        // 解析数据行
+                        while i < lines.count {
+                            let dataLine = lines[i].trimmingCharacters(in: .whitespaces)
+                            if dataLine.hasPrefix("|") && dataLine.hasSuffix("|") {
+                                let cells = parseTableRow(dataLine)
+                                // 确保列数与表头一致
+                                if cells.count == headers.count || cells.count > 0 {
+                                    tableRows.append(cells)
+                                }
+                                i += 1
+                            } else {
+                                break
+                            }
+                        }
+                        i -= 1  // 回退一行
+                    } else {
+                        i -= 2  // 不是表格，回退
+                    }
+                } else {
+                    i -= 1
+                }
+
+                // 只在有表头和至少一行数据时添加表格
+                if !headers.isEmpty {
+                    blocks.append(.table(rows: tableRows, headers: headers))
+                }
+            }
             // 列表项
             else if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
                 blocks.append(.listItem(String(trimmed.dropFirst(2))))
@@ -623,6 +681,49 @@ struct MessageInputBar: View {
         case .spacer:
             Spacer()
                 .frame(height: 4)
+        case .table(let rows, let headers):
+            VStack(alignment: .leading, spacing: 0) {
+                // 表头
+                HStack(spacing: 12) {
+                    ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
+                        Text(renderInlineMarkdown(header.isEmpty ? " " : header))
+                            .font(.system(size: fontSize - 2, weight: .bold, design: .monospaced))
+                            .frame(minWidth: 50, maxWidth: .infinity, alignment: .leading)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.15))
+
+                // 数据行
+                ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                    HStack(spacing: 12) {
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                            Text(renderInlineMarkdown(cell.isEmpty ? " " : cell))
+                                .font(.system(size: fontSize - 2, design: .monospaced))
+                                .frame(minWidth: 50, maxWidth: .infinity, alignment: .leading)
+                                .lineLimit(3)
+                                .truncationMode(.tail)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(rowIndex % 2 == 0 ? Color.clear : Color.white.opacity(0.02))
+                    if rowIndex < rows.count - 1 {
+                        Divider()
+                            .background(Color.white.opacity(0.08))
+                            .padding(.leading, 10)
+                    }
+                }
+            }
+            .cornerRadius(6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+            .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -652,6 +753,7 @@ enum MarkdownBlock: Equatable {
     case divider
     case paragraph(String)
     case spacer
+    case table(rows: [[String]], headers: [String])
 }
 
 // MARK: - Apple Style Scrollbar View Modifier
