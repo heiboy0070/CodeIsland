@@ -113,9 +113,17 @@ struct NotchPanelView: View {
                                 toolInput: pending.event.toolInput,
                                 queuePosition: 1,
                                 queueTotal: appState.permissionQueue.count,
-                                onAllow: { appState.approvePermission(always: false) },
-                                onAlwaysAllow: { appState.approvePermission(always: true) },
-                                onDeny: { appState.denyPermission() }
+                                onAllowWithContent: { content in appState.approvePermission(always: false, content: content) },
+                                onAlwaysAllowWithContent: { content in appState.approvePermission(always: true, content: content) },
+                                onDenyWithContent: { content in
+                                    if let content = content {
+                                        // 有附加内容时，需要特殊处理拒绝
+                                        // 暂时直接清空输入，后续可以扩展
+                                        appState.denyPermission()
+                                    } else {
+                                        appState.denyPermission()
+                                    }
+                                }
                             )
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
                         }
@@ -155,6 +163,22 @@ struct NotchPanelView: View {
                     case .completionCard:
                         SessionListView(appState: appState, onlySessionId: appState.justCompletedSessionId)
                             .transition(.blurFade.combined(with: .move(edge: .top)))
+                    case .messageInput(let sid):
+                        if let session = appState.sessions[sid] {
+                            MessageInputBar(
+                                session: session,
+                                sessionId: sid,
+                                onSend: { text in
+                                    TerminalWriter.sendText(session: session, sessionId: sid, text: text)
+                                },
+                                onDismiss: {
+                                    withAnimation(NotchAnimation.close) {
+                                        appState.surface = .sessionList
+                                    }
+                                }
+                            )
+                            .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
+                        }
                     case .sessionList:
                         SessionListView(appState: appState, onlySessionId: nil)
                             .transition(.blurFade.combined(with: .move(edge: .top)))
@@ -214,7 +238,7 @@ struct NotchPanelView: View {
                     return
                 }
                 switch appState.surface {
-                case .approvalCard, .questionCard: return
+                case .approvalCard, .questionCard, .messageInput: return
                 case .completionCard:
                     // Completion card: mark entered on hover-in, block collapse until entered
                     if hovering {
@@ -648,9 +672,13 @@ private struct ApprovalBar: View {
     let toolInput: [String: Any]?
     let queuePosition: Int
     let queueTotal: Int
-    let onAllow: () -> Void
-    let onAlwaysAllow: () -> Void
-    let onDeny: () -> Void
+    let onAllowWithContent: (String?) -> Void
+    let onAlwaysAllowWithContent: (String?) -> Void
+    let onDenyWithContent: (String?) -> Void
+
+    @State private var inputText = ""
+    @FocusState private var isFocused: Bool
+    @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
 
     private var fileName: String? {
         guard let fp = toolInput?["file_path"] as? String else { return nil }
@@ -663,6 +691,10 @@ private struct ApprovalBar: View {
 
     private var serverName: String? {
         toolInput?["server_name"] as? String
+    }
+
+    private var trimmedInput: String {
+        inputText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var body: some View {
@@ -707,11 +739,43 @@ private struct ApprovalBar: View {
                     .background(Color.white.opacity(0.04))
             }
 
+            // 输入框（始终显示，用于附加内容）
+            HStack(spacing: 6) {
+                Text(">")
+                    .font(.system(size: CGFloat(contentFontSize) - 1, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
+                TextField(L10n.shared["approval_input_placeholder"] ?? "附加内容（可选）...", text: $inputText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: CGFloat(contentFontSize) - 1, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .focused($isFocused)
+                    .onSubmit {
+                        let content = trimmedInput.isEmpty ? nil : trimmedInput
+                        onAllowWithContent(content)
+                        inputText = ""
+                    }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.06))
+
             // Pixel-style buttons
             HStack(spacing: 6) {
-                PixelButton(label: L10n.shared["deny"], fg: .white.opacity(0.95), bg: Color(red: 0.45, green: 0.12, blue: 0.12), border: Color(red: 0.7, green: 0.25, blue: 0.25), action: onDeny)
-                PixelButton(label: L10n.shared["allow_once"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32), action: onAllow)
-                PixelButton(label: L10n.shared["always"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82), action: onAlwaysAllow)
+                PixelButton(label: L10n.shared["deny"], fg: .white.opacity(0.95), bg: Color(red: 0.45, green: 0.12, blue: 0.12), border: Color(red: 0.7, green: 0.25, blue: 0.25)) {
+                    let content = trimmedInput.isEmpty ? nil : trimmedInput
+                    onDenyWithContent(content)
+                    inputText = ""
+                }
+                PixelButton(label: L10n.shared["allow_once"], fg: .white.opacity(0.95), bg: Color(red: 0.16, green: 0.38, blue: 0.18), border: Color(red: 0.28, green: 0.62, blue: 0.32)) {
+                    let content = trimmedInput.isEmpty ? nil : trimmedInput
+                    onAllowWithContent(content)
+                    inputText = ""
+                }
+                PixelButton(label: L10n.shared["always"], fg: .white.opacity(0.95), bg: Color(red: 0.14, green: 0.28, blue: 0.52), border: Color(red: 0.28, green: 0.48, blue: 0.82)) {
+                    let content = trimmedInput.isEmpty ? nil : trimmedInput
+                    onAlwaysAllowWithContent(content)
+                    inputText = ""
+                }
             }
             .padding(.horizontal, 14)
         }
@@ -1495,6 +1559,7 @@ private struct SessionListView: View {
                 ForEach(group.ids, id: \.self) { sessionId in
                     if let session = appState.sessions[sessionId] {
                         SessionCard(
+                            appState: appState,
                             sessionId: sessionId,
                             session: session,
                             isCompletion: onlySessionId != nil
@@ -1675,6 +1740,7 @@ private struct SessionsExpandLink: View {
 }
 
 private struct SessionCard: View {
+    var appState: AppState
     let sessionId: String
     let session: SessionSnapshot
     var isCompletion: Bool = false
@@ -1697,7 +1763,14 @@ private struct SessionCard: View {
 
     var body: some View {
         Button {
-            TerminalActivator.activate(session: session, sessionId: sessionId)
+            // 点击卡片：如果有消息输入功能，打开输入面板；否则跳转终端
+            if !session.isRemote && !session.isIDETerminal {
+                withAnimation(NotchAnimation.open) {
+                    appState.surface = .messageInput(sessionId: sessionId)
+                }
+            } else {
+                TerminalActivator.activate(session: session, sessionId: sessionId)
+            }
         } label: {
         HStack(alignment: .center, spacing: 8) {
             // Column 1: Character + subagent icons
@@ -1748,6 +1821,20 @@ private struct SessionCard: View {
                             SessionTag("YOLO", color: Color(red: 1.0, green: 0.35, blue: 0.35))
                         }
                         SessionTag(timeAgo(session.startTime))
+                        // 发消息按钮（仅本地 CLI 会话显示）
+                        if !session.isRemote && !session.isIDETerminal {
+                            Button {
+                                withAnimation(NotchAnimation.open) {
+                                    appState.surface = .messageInput(sessionId: sessionId)
+                                }
+                            } label: {
+                                Image(systemName: "text.bubble.fill")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(.white.opacity(0.7))
+                                    .frame(width: 22, height: 22)
+                            }
+                            .buttonStyle(.plain)
+                        }
                         TerminalBadge(session: session)
                     }
                 }

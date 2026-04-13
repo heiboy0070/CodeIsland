@@ -54,7 +54,7 @@ final class AppState {
     /// True when an interactive card (approval or question) is visible — completions must queue.
     private var isShowingInteractive: Bool {
         switch surface {
-        case .approvalCard, .questionCard: return true
+        case .approvalCard, .questionCard, .messageInput: return true
         default: return false
         }
     }
@@ -607,7 +607,7 @@ final class AppState {
                 // (e.g. approval/question card popped up, session was removed)
                 guard self.sessions[sessionId] != nil else { return }
                 switch self.surface {
-                case .approvalCard, .questionCard: return  // don't overwrite higher-priority surfaces
+                case .approvalCard, .questionCard, .messageInput: return  // don't overwrite higher-priority surfaces
                 default: break
                 }
                 if !tabVisible {
@@ -863,7 +863,7 @@ final class AppState {
         refreshDerivedState()
     }
 
-    func approvePermission(always: Bool = false) {
+    func approvePermission(always: Bool = false, content: String? = nil) {
         guard !permissionQueue.isEmpty else { return }
         let pending = permissionQueue.removeFirst()
         let responseData: Data
@@ -885,8 +885,22 @@ final class AppState {
             ]
             responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
         } else {
-            let response = #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#
-            responseData = Data(response.utf8)
+            // 如果有附加内容，使用带 content 的响应格式
+            if let content = content, !content.isEmpty {
+                let obj: [String: Any] = [
+                    "hookSpecificOutput": [
+                        "hookEventName": "PermissionRequest",
+                        "decision": [
+                            "behavior": "allow",
+                            "userInput": content
+                        ] as [String: Any]
+                    ] as [String: Any]
+                ]
+                responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
+            } else {
+                let response = ##"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"##
+                responseData = Data(response.utf8)
+            }
         }
         pending.continuation.resume(returning: responseData)
         let sessionId = pending.event.sessionId ?? "default"
