@@ -14,6 +14,7 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
     @AppStorage(SettingsKey.showToolStatus) private var showToolStatus = SettingsDefaults.showToolStatus
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
+    @AppStorage(SettingsKey.sessionClickAction) private var sessionClickAction = SettingsDefaults.sessionClickAction
 
     /// Delayed hover: prevents accidental expansion when mouse passes through
     @State private var hoverTimer: Timer?
@@ -1796,6 +1797,7 @@ private struct SessionCard: View {
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
     @AppStorage(SettingsKey.showAgentDetails) private var showAgentDetails = SettingsDefaults.showAgentDetails
+    @AppStorage(SettingsKey.sessionClickAction) private var sessionClickAction = SettingsDefaults.sessionClickAction
     private var fontSize: CGFloat { CGFloat(contentFontSize) }
     private var aiLineLimit: Int? { aiMessageLines > 0 ? aiMessageLines : nil }
     private var statusNameColor: Color {
@@ -1811,8 +1813,14 @@ private struct SessionCard: View {
 
     var body: some View {
         Button {
-            // 点击卡片：跳转终端
-            TerminalActivator.activate(session: session, sessionId: sessionId)
+            // 点击卡片：根据配置决定行为
+            if sessionClickAction == "messageInput" && !session.isRemote && !session.isIDETerminal {
+                withAnimation(NotchAnimation.open) {
+                    appState.surface = .messageInput(sessionId: sessionId)
+                }
+            } else {
+                TerminalActivator.activate(session: session, sessionId: sessionId)
+            }
         } label: {
         HStack(alignment: .center, spacing: 8) {
             // Column 1: Character + subagent icons

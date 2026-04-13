@@ -337,6 +337,7 @@ private struct BehaviorPage: View {
     @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
     @AppStorage(SettingsKey.smartSuppress) private var smartSuppress = SettingsDefaults.smartSuppress
     @AppStorage(SettingsKey.collapseOnMouseLeave) private var collapseOnMouseLeave = SettingsDefaults.collapseOnMouseLeave
+    @AppStorage(SettingsKey.sessionClickAction) private var sessionClickAction = SettingsDefaults.sessionClickAction
     @AppStorage(SettingsKey.sessionTimeout) private var sessionTimeout = SettingsDefaults.sessionTimeout
     @AppStorage(SettingsKey.rotationInterval) private var rotationInterval = SettingsDefaults.rotationInterval
     @AppStorage(SettingsKey.maxToolHistory) private var maxToolHistory = SettingsDefaults.maxToolHistory
@@ -368,6 +369,13 @@ private struct BehaviorPage: View {
                     isOn: $collapseOnMouseLeave,
                     animation: .collapseMouseLeave
                 )
+                Picker(selection: $sessionClickAction) {
+                    Text(l10n["click_action_terminal"]).tag("terminal")
+                    Text(l10n["click_action_message_input"]).tag("messageInput")
+                } label: {
+                    Text(l10n["session_click_action"])
+                    Text(l10n["session_click_action_desc"])
+                }
             }
 
             Section(l10n["sessions"]) {

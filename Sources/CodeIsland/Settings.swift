@@ -70,6 +70,9 @@ enum SettingsKey {
     // Island collapsed width scale for non-notch screens (percentage: 50–150, default 100)
     static let collapsedWidthScale = "collapsedWidthScale"
 
+    // Session click behavior
+    static let sessionClickAction = "sessionClickAction"        // "terminal" or "messageInput"
+
 }
 
 struct SettingsDefaults {
@@ -108,6 +111,8 @@ struct SettingsDefaults {
     static let showToolStatus = true
 
     static let collapsedWidthScale = 100  // percentage
+
+    static let sessionClickAction = "terminal"  // "terminal" or "messageInput"
 }
 
 @MainActor
@@ -145,6 +150,7 @@ class SettingsManager {
             SettingsKey.sessionGroupingMode: SettingsDefaults.sessionGroupingMode,
             SettingsKey.showToolStatus: SettingsDefaults.showToolStatus,
             SettingsKey.collapsedWidthScale: SettingsDefaults.collapsedWidthScale,
+            SettingsKey.sessionClickAction: SettingsDefaults.sessionClickAction,
         ])
     }
 
@@ -228,6 +234,11 @@ class SettingsManager {
     var sessionGroupingMode: String {
         get { defaults.string(forKey: SettingsKey.sessionGroupingMode) ?? SettingsDefaults.sessionGroupingMode }
         set { defaults.set(newValue, forKey: SettingsKey.sessionGroupingMode) }
+    }
+
+    var sessionClickAction: String {
+        get { defaults.string(forKey: SettingsKey.sessionClickAction) ?? SettingsDefaults.sessionClickAction }
+        set { defaults.set(newValue, forKey: SettingsKey.sessionClickAction) }
     }
 }
 
