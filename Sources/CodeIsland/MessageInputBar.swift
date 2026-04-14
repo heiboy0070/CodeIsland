@@ -13,6 +13,7 @@ struct MessageInputBar: View {
     @FocusState private var isFocused: Bool
     @AppStorage(SettingsKey.contentFontSize) private var contentFontSize = SettingsDefaults.contentFontSize
     @AppStorage(SettingsKey.aiMessageLines) private var aiMessageLines = SettingsDefaults.aiMessageLines
+    @State private var lastSendTime: Date = Date.distantPast  // 防止重复发送的时间戳
 
     // 使用持久化的输入文本
     private var inputText: Binding<String> {
@@ -176,8 +177,7 @@ struct MessageInputBar: View {
                     text: inputText,
                     isFocused: $isFocused,
                     onSubmit: {
-                        guard !inputText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                        onSend(inputText.wrappedValue)
+                        performSend()
                     }
                 )
                 .font(.system(size: fontSize, design: .monospaced))
@@ -185,8 +185,7 @@ struct MessageInputBar: View {
 
                 // 发送按钮
                 Button {
-                    guard !inputText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-                    onSend(inputText.wrappedValue)
+                    performSend()
                 } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 18))
@@ -197,7 +196,6 @@ struct MessageInputBar: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .disabled(inputText.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -226,6 +224,23 @@ struct MessageInputBar: View {
     }
 
     // MARK: - Helpers
+
+    /// 执行发送（带防重复保护）
+    private func performSend() {
+        let textToSend = inputText.wrappedValue
+        guard !textToSend.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        let now = Date()
+        guard now.timeIntervalSince(lastSendTime) > 0.5 else { return }
+        lastSendTime = now
+
+        onSend(textToSend)
+
+        // 发送后延迟清空输入（给用户时间看到发送完成）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            inputText.wrappedValue = ""
+        }
+    }
 
     /// 简短显示模型名称
     private func modelShortName(_ model: String) -> String {
@@ -685,39 +700,42 @@ struct MessageInputBar: View {
             Spacer()
                 .frame(height: 4)
         case .table(let rows, let headers):
-            VStack(alignment: .leading, spacing: 0) {
-                // 表头
-                HStack(spacing: 12) {
-                    ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
-                        Text(renderInlineMarkdown(header.isEmpty ? " " : header))
-                            .font(.system(size: fontSize - 2, weight: .bold, design: .monospaced))
-                            .frame(minWidth: 50, maxWidth: .infinity, alignment: .leading)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.white.opacity(0.15))
-
-                // 数据行
-                ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+            // 表格可能很宽，使用横向滚动
+            ScrollView(.horizontal, showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 0) {
+                    // 表头
                     HStack(spacing: 12) {
-                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            Text(renderInlineMarkdown(cell.isEmpty ? " " : cell))
-                                .font(.system(size: fontSize - 2, design: .monospaced))
-                                .frame(minWidth: 50, maxWidth: .infinity, alignment: .leading)
-                                .lineLimit(3)
+                        ForEach(Array(headers.enumerated()), id: \.offset) { _, header in
+                            Text(renderInlineMarkdown(header.isEmpty ? " " : header))
+                                .font(.system(size: fontSize - 2, weight: .bold, design: .monospaced))
+                                .frame(minWidth: 50, maxWidth: 200, alignment: .leading)
+                                .lineLimit(1)
                                 .truncationMode(.tail)
                         }
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(rowIndex % 2 == 0 ? Color.clear : Color.white.opacity(0.02))
-                    if rowIndex < rows.count - 1 {
-                        Divider()
-                            .background(Color.white.opacity(0.08))
-                            .padding(.leading, 10)
+                    .background(Color.white.opacity(0.15))
+
+                    // 数据行
+                    ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                        HStack(spacing: 12) {
+                            ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
+                                Text(renderInlineMarkdown(cell.isEmpty ? " " : cell))
+                                    .font(.system(size: fontSize - 2, design: .monospaced))
+                                    .frame(minWidth: 50, maxWidth: 200, alignment: .leading)
+                                    .lineLimit(3)
+                                    .truncationMode(.tail)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(rowIndex % 2 == 0 ? Color.clear : Color.white.opacity(0.02))
+                        if rowIndex < rows.count - 1 {
+                            Divider()
+                                .background(Color.white.opacity(0.08))
+                                .padding(.leading, 10)
+                        }
                     }
                 }
             }

@@ -74,7 +74,6 @@ struct TerminalWriter {
                         repeat with s in sessions of t
                             if unique ID of s is "\(escapeAppleScript(itermId))" then
                                 tell s to write text "\(escapeAppleScript(text))"
-                                return "found"
                             end if
                         end repeat
                     end repeat
@@ -112,7 +111,6 @@ struct TerminalWriter {
             end tell
         end tell
         """
-        print("[TerminalWriter] Sending to iTerm2 current session")
         runAppleScript(script)
     }
 
@@ -174,21 +172,25 @@ struct TerminalWriter {
         }
     }
 
-    // MARK: - 通用降级：激活终端 + System Events keystroke
+    // MARK: - 通用降级：激活终端 + 粘贴 + 回车
 
     private static func sendViaKeystroke(bundleId: String?, appName: String, session: SessionSnapshot, sessionId: String?, text: String, pressEnter: Bool) {
         // 先激活目标终端窗口
         TerminalActivator.activate(session: session, sessionId: sessionId)
 
-        // 短暂延迟确保窗口激活完成，然后通过 keystroke 发送
+        // 复制到剪贴板
+        copyToClipboard(text)
+
+        // 短暂延迟确保窗口激活和复制完成，然后粘贴并按回车
         DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.3) {
-            let escapedText = escapeAppleScript(text)
+            // 使用 Cmd+V 粘贴，然后按回车
             let enterLine = pressEnter ? """
-                keystroke return
+                keystroke return using command down
             """ : ""
             let script = """
             tell application "System Events"
-                keystroke "\(escapedText)"
+                keystroke "v" using command down
+                delay 0.1
                 \(enterLine)
             end tell
             """
@@ -286,10 +288,6 @@ struct TerminalWriter {
             _ = script.executeAndReturnError(&error)
             if let error = error {
                 print("[TerminalWriter] AppleScript error: \(error)")
-                // 尝试从错误中提取更多信息
-                if let errorMsg = error[NSAppleScript.errorMessage] as? String {
-                    print("[TerminalWriter] Error message: \(errorMsg)")
-                }
             }
         }
     }

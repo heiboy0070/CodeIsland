@@ -37,6 +37,9 @@ public struct SessionSnapshot {
     public var permissionMode: String?
     public var toolHistory: [ToolHistoryEntry] = []
     public var subagents: [String: SubagentState] = [:]
+    /// Last error message for display on session card
+    public var lastError: String?
+    public var lastErrorTime: Date?
     public var startTime: Date = Date()
     public var lastUserPrompt: String?
     public var lastAssistantMessage: String?
@@ -528,6 +531,9 @@ public func reduceEvent(
             let desc = sessions[sessionId]?.toolDescription
             sessions[sessionId]?.recordTool(tool, description: desc, success: true, agentType: nil, maxHistory: maxHistory)
         }
+        // 成功的工具使用，清除之前的错误
+        sessions[sessionId]?.lastError = nil
+        sessions[sessionId]?.lastErrorTime = nil
         if !isWaiting {
             sessions[sessionId]?.status = .processing
             sessions[sessionId]?.currentTool = nil
@@ -537,6 +543,10 @@ public func reduceEvent(
         if let tool = sessions[sessionId]?.currentTool {
             let desc = sessions[sessionId]?.toolDescription
             sessions[sessionId]?.recordTool(tool, description: desc, success: false, agentType: nil, maxHistory: maxHistory)
+            // 记录错误信息
+            let errorMsg = event.rawJSON["error"] as? String ?? event.rawJSON["message"] as? String
+            sessions[sessionId]?.lastError = errorMsg ?? "\(tool) failed"
+            sessions[sessionId]?.lastErrorTime = Date()
         }
         if !isWaiting {
             sessions[sessionId]?.status = .processing
@@ -544,6 +554,9 @@ public func reduceEvent(
             sessions[sessionId]?.toolDescription = nil
         }
     case "PermissionDenied":
+        // 记录权限被拒绝的错误
+        sessions[sessionId]?.lastError = "Permission denied"
+        sessions[sessionId]?.lastErrorTime = Date()
         if !isWaiting {
             sessions[sessionId]?.status = .processing
             sessions[sessionId]?.currentTool = nil
@@ -901,6 +914,10 @@ private func handleSubagentEvent(
             let agentType = sessions[sessionId]?.subagents[agentId]?.agentType
             let desc = sessions[sessionId]?.subagents[agentId]?.toolDescription
             sessions[sessionId]?.recordTool(tool, description: desc, success: false, agentType: agentType, maxHistory: maxHistory)
+            // 记录错误信息
+            let errorMsg = event.rawJSON["error"] as? String ?? event.rawJSON["message"] as? String
+            sessions[sessionId]?.lastError = errorMsg ?? "\(tool) failed"
+            sessions[sessionId]?.lastErrorTime = Date()
         }
         sessions[sessionId]?.subagents[agentId]?.status = .processing
         sessions[sessionId]?.subagents[agentId]?.currentTool = nil

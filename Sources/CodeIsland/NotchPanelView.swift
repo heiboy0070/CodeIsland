@@ -24,6 +24,8 @@ struct NotchPanelView: View {
     @State private var curtainOffset: CGFloat = 0
     @State private var curtainOpacity: Double = 1
     @State private var displayedToolStatus: Bool = SettingsDefaults.showToolStatus
+    /// ESC key monitor reference for cleanup
+    @State private var escapeMonitor: Any?
 
     private var isActive: Bool { !appState.sessions.isEmpty }
     /// First launch / no-session state should still render a visible marker so the app
@@ -66,7 +68,7 @@ struct NotchPanelView: View {
 
     /// 安装全局 ESC 键监听
     private func installEscapeKeyMonitor() {
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.keyCode == 53 {  // ESC key
                 Task { @MainActor in
                     self.handleEscapeKey()
@@ -351,6 +353,12 @@ struct NotchPanelView: View {
         .animation(NotchAnimation.open, value: appState.surface)
         .onAppear {
             installEscapeKeyMonitor()
+        }
+        .onDisappear {
+            if let monitor = escapeMonitor {
+                NSEvent.removeMonitor(monitor)
+                escapeMonitor = nil
+            }
         }
     }
 }
@@ -1866,6 +1874,12 @@ private struct SessionCard: View {
                         }
                         if session.interrupted {
                             SessionTag("INT", color: Color(red: 1.0, green: 0.6, blue: 0.2))
+                        }
+                        // 显示错误标签（如果最近有错误）
+                        if session.lastError != nil,
+                           let errorTime = session.lastErrorTime,
+                           Date().timeIntervalSince(errorTime) < 300 {  // 5分钟内显示
+                            SessionTag("ERR", color: Color(red: 1.0, green: 0.35, blue: 0.35))
                         }
                         if session.isYoloMode == true {
                             SessionTag("YOLO", color: Color(red: 1.0, green: 0.35, blue: 0.35))
