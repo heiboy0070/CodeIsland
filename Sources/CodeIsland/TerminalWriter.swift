@@ -1,5 +1,8 @@
 import AppKit
 import CodeIslandCore
+import os.log
+
+private let terminalWriterLog = Logger(subsystem: "com.codeisland", category: "TerminalWriter")
 
 /// 向终端会话发送文本消息（模拟用户在终端输入）
 struct TerminalWriter {
@@ -66,7 +69,7 @@ struct TerminalWriter {
 
     private static func sendViaITerm(session: SessionSnapshot, text: String) {
         if let itermId = session.itermSessionId, !itermId.isEmpty {
-            // 首先尝试通过 session ID 找到目标 session
+            // 通过 session ID 找到目标 session，找到后立即 return 避免发送到错误的 session
             let scriptById = """
             tell application "iTerm2"
                 repeat with w in windows
@@ -74,6 +77,7 @@ struct TerminalWriter {
                         repeat with s in sessions of t
                             if unique ID of s is "\(escapeAppleScript(itermId))" then
                                 tell s to write text "\(escapeAppleScript(text))"
+                                return "found"
                             end if
                         end repeat
                     end repeat
@@ -81,37 +85,17 @@ struct TerminalWriter {
                 return "not_found"
             end tell
             """
-            print("[TerminalWriter] Sending to iTerm2 session: \(itermId)")
 
-            // 执行并检查结果
             if let script = NSAppleScript(source: scriptById) {
                 var error: NSDictionary?
                 let result = script.executeAndReturnError(&error)
                 if let error = error {
-                    print("[TerminalWriter] Error finding session: \(error)")
-                    sendViaITermCurrentSession(text: text)
+                    terminalWriterLog.error("AppleScript error finding iTerm session: \(error)")
                 } else if let resultStr = result.stringValue, resultStr == "not_found" {
-                    print("[TerminalWriter] Session not found, falling back to current session")
-                    sendViaITermCurrentSession(text: text)
-                } else {
-                    print("[TerminalWriter] Session found and text sent")
+                    terminalWriterLog.warning("iTerm session not found: \(itermId)")
                 }
             }
-        } else {
-            sendViaITermCurrentSession(text: text)
         }
-    }
-
-    /// 降级：发送到 iTerm2 当前 session
-    private static func sendViaITermCurrentSession(text: String) {
-        let script = """
-        tell application "iTerm2"
-            tell current session of current tab of current window
-                write text "\(escapeAppleScript(text))"
-            end tell
-        end tell
-        """
-        runAppleScript(script)
     }
 
     // MARK: - Terminal.app（AppleScript do script）
@@ -287,7 +271,7 @@ struct TerminalWriter {
             var error: NSDictionary?
             _ = script.executeAndReturnError(&error)
             if let error = error {
-                print("[TerminalWriter] AppleScript error: \(error)")
+                terminalWriterLog.error("AppleScript error: \(error)")
             }
         }
     }
